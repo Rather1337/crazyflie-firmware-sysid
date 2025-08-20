@@ -1,0 +1,31 @@
+[project]
+name = "crazyflie_firmware"
+version = "0.0.1"
+description = "Models of quadrotor drones for estimation and control tasks."
+readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+]
+
+dependencies = ["numpy", "scipy", "pysoem", "cfclient"]
+
+[tool.pixi.workspace]
+channels = ["memfault", "conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+
+[tool.pixi.dependencies]
+libxcb = ">=1.17"
+pip = ">=23.0"
+python = ">=3.10"
+gcc-arm-none-eabi = ">=10.3"
+gcc = ">=11.0.0"
+make = ">=4.3"
