@@ -8,6 +8,7 @@ bin/*
 .settings/*
 .vscode/*
 *~
+cache/
 cflie.*
 version.c
 tags
