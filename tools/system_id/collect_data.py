@@ -16,14 +16,13 @@ from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.localization import Localization
 
-
 # Only output errors from the logging framework
 # logging.basicConfig(level=logging.ERROR)
 
 PWM_MIN = 15000  # 20000 onboard, going lower for more datapoints
 PWM_MAX = 65535  # 65535
 # Voltage at which we abort experiments: 2.8 (O250 or P250) or 2.6 (T350)
-VBAT_MIN = 2.6
+VBAT_MIN = 2.8
 
 
 class CollectData(ABC):
@@ -33,7 +32,15 @@ class CollectData(ABC):
     """
 
     def __init__(
-        self, link_uri, calib_a, calib_b, comb, mode, batComp=False, verbose=False
+        self,
+        link_uri,
+        calib_a,
+        calib_b,
+        comb,
+        mode,
+        batComp=False,
+        verbose=False,
+        loadcell=None,
     ):
         """Initialize and run the example with the specified link_uri"""
         self.measurements = []
@@ -46,6 +53,7 @@ class CollectData(ABC):
         self.calib_b = calib_b
         self.g = 9.807  # Munich, Germany
         self.start_time = 0
+        self.loadcell = loadcell
 
         self._cf = Crazyflie(rw_cache="./cache")
 
@@ -140,6 +148,8 @@ class CollectData(ABC):
         """Callback froma the log API when data arrives"""
         if self.start_time == 0:
             self.start_time = timestamp
+        if self.loadcell is not None:
+            data["loadcell.weight"] = -self.loadcell.read_data()[2] * 1000 / self.g
         if self.verbose:
             print("[%d][%s]: %s" % (timestamp - self.start_time, logconf.name, data))
         self._write(timestamp, data)
@@ -227,18 +237,20 @@ class CollectDataRamp(CollectData):
     link uri.
     """
 
-    def __init__(self, link_uri, calib_a, calib_b, comb):
+    def __init__(self, link_uri, calib_a, calib_b, comb, loadcell=None):
         """Initialize and run the example with the specified link_uri"""
-        super().__init__(link_uri, calib_a, calib_b, comb, "ramp_motors")
+        super().__init__(
+            link_uri, calib_a, calib_b, comb, "ramp_motors", loadcell=loadcell
+        )
 
     def _ramp_motors(self):
         self._check_parameters()
 
         pwm_mult = 1
         pwm_step = 500
-        time_step = 0.25
+        time_step = 0.1
         pwm = 0
-        max_pwm = PWM_MAX  # max = 65535
+        max_pwm = PWM_MAX  # PWM_MAX
 
         self._cf.param.set_value("motorPowerSet.m1", 0)
         if self.batComp:
@@ -270,7 +282,9 @@ class CollectDataStatic(CollectData):
     link uri and disconnects after 5s.
     """
 
-    def __init__(self, link_uri, calib_a, calib_b, comb, extra="", batComp=False):
+    def __init__(
+        self, link_uri, calib_a, calib_b, comb, extra="", batComp=False, loadcell=None
+    ):
         """Initialize and run the example with the specified link_uri"""
         self.measurements = []
         self.desiredThrust = 0
@@ -278,15 +292,29 @@ class CollectDataStatic(CollectData):
             extra = f"_{extra}"
         if batComp:  # verification mode
             super().__init__(
-                link_uri, calib_a, calib_b, comb, f"static_verification{extra}", batComp
+                link_uri,
+                calib_a,
+                calib_b,
+                comb,
+                f"static_verification{extra}",
+                batComp,
+                loadcell=loadcell,
             )
         else:
             super().__init__(
-                link_uri, calib_a, calib_b, comb, f"static{extra}", batComp
+                link_uri,
+                calib_a,
+                calib_b,
+                comb,
+                f"static{extra}",
+                batComp,
+                loadcell=loadcell,
             )
 
     def _stab_log_data(self, timestamp, data, logconf):
         """Callback froma the log API when data arrives"""
+        if self.loadcell is not None:
+            data["loadcell.weight"] = -self.loadcell.read_data()[2] * 1000 / self.g
         if self.verbose:
             print("[%d][%s]: %s" % (timestamp, logconf.name, data))
         if self.batComp:  # In verification mode, directly store data
@@ -368,7 +396,7 @@ class CollectDataDynamic(CollectData):
     link uri and disconnects after 5s.
     """
 
-    def __init__(self, link_uri, calib_a, calib_b, comb, extra=""):
+    def __init__(self, link_uri, calib_a, calib_b, comb, extra="", loadcell=None):
         """Initialize and run the example with the specified link_uri"""
         self.samplerate = 7  # has to be in [0,7], where 7 is the highest.
         # 0 = 10Hz (default), 1 = 20Hz, 2 = 40Hz, 3 = 80Hz, 7 = 320Hz
@@ -376,7 +404,9 @@ class CollectDataDynamic(CollectData):
         # However, the data of the loadcell only gets sent with ~2Hz anyway
         if extra != "":  # Add an underscore if extra is not empty
             extra = f"_{extra}"
-        super().__init__(link_uri, calib_a, calib_b, comb, f"dynamic{extra}")
+        super().__init__(
+            link_uri, calib_a, calib_b, comb, f"dynamic{extra}", loadcell=loadcell
+        )
 
     def _fully_connected(self, link_uri):
         """This callback is called form the Crazyflie API when a Crazyflie
@@ -464,7 +494,7 @@ if __name__ == "__main__":
         help="Input file containing the calibration",
     )
     parser.add_argument(
-        "--uri", default="radio://0/42/2M/E7E7E7E7E7", help="URI of Crazyflie"
+        "--uri", default="radio://0/80/2M/E7E7E7E7E7", help="URI of Crazyflie"
     )
     parser.add_argument(
         "--mode",
@@ -493,17 +523,29 @@ if __name__ == "__main__":
         a = r["a"]
         b = r["b"]
 
+    use_loadcell = True  # TODO change for argument
+    loadcell = None
+    if use_loadcell:
+        from loadcell import Loadcell
+
+        loadcell = Loadcell("enp0s31f6", verbose=False)
+        loadcell.calibrate()
+
     # collect data
     if args.mode == "ramp_motors":
-        le = CollectDataRamp(args.uri, a, b, args.comb)
+        le = CollectDataRamp(args.uri, a, b, args.comb, loadcell=loadcell)
     elif args.mode == "static":
-        le = CollectDataStatic(args.uri, a, b, args.comb, extra=args.extra)
+        le = CollectDataStatic(
+            args.uri, a, b, args.comb, extra=args.extra, loadcell=loadcell
+        )
     elif args.mode == "static_verification":  # activate battery compensation to test it
         le = CollectDataStatic(
-            args.uri, a, b, args.comb, extra=args.extra, batComp=True
+            args.uri, a, b, args.comb, extra=args.extra, batComp=True, loadcell=loadcell
         )
     elif args.mode == "dynamic":
-        le = CollectDataDynamic(args.uri, a, b, args.comb, extra=args.extra)
+        le = CollectDataDynamic(
+            args.uri, a, b, args.comb, extra=args.extra, loadcell=loadcell
+        )
     else:
         raise NotImplementedError(
             f"Data Collection Type {args.mode} is not implemented."
