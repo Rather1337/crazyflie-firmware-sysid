@@ -100,7 +100,9 @@ def system_id_static(filenames, validations=[]):
 
     fig, axs = plt.subplots(2, 1)
 
-    axs[0].scatter(data["vmotors"], data["rpm_avg"], label="data")
+    axs[0].scatter(data["vmotors"], data["rpm_avg"], label="training data")
+    if len(validations) > 0:
+        axs[0].scatter(data_val["vmotors"], data_val["rpm_avg"], label="training data")
     X = np.vstack((data["vmotors"]))
     reg = LinearRegression().fit(X, data["rpm_avg"])
     p_vmotor2rpm = [reg.intercept_, reg.coef_[0]]
@@ -111,7 +113,9 @@ def system_id_static(filenames, validations=[]):
     axs[0].set_ylabel("Motor RPM")
     axs[0].legend()
 
-    axs[1].scatter(data["rpm_avg"], data["thrust"], label="data")
+    axs[1].scatter(data["rpm_avg"], data["thrust"], label="training data")
+    if len(validations) > 0:
+        axs[1].scatter(data_val["rpm_avg"], data_val["thrust"], label="validation data")
     X = np.vstack((data["rpm_avg"], data["rpm_avg"] ** 2)).T
     reg = LinearRegression(fit_intercept=True).fit(X, data["thrust"])
     p_rpm2thrust = [reg.intercept_, reg.coef_[0], reg.coef_[1]]
