@@ -22,7 +22,9 @@ def loadFile(filename: str) -> dict:
     data["i"] = rawdata[:, 9]  # in [A]
     data["p"] = rawdata[:, 10]  # in [W]
     data["cmd"] = rawdata[:, 11]  # in [PWM]
-    # data["maxThrustVbat"] = rawdata[:,11] # in [V]
+    data["torque_x"] = rawdata[:, 12]  # in [N]
+    data["torque_y"] = rawdata[:, 13]  # in [N]
+    data["torque_z"] = rawdata[:, 14]  # in [N]
     return data
 
 

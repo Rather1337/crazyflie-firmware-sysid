@@ -36,8 +36,9 @@ class CollectData(ABC):
         link_uri,
         calib_a,
         calib_b,
-        comb,
-        mode,
+        mode: str,
+        comb: str,
+        extra: str,
         batComp=False,
         verbose=False,
         loadcell=None,
@@ -46,8 +47,8 @@ class CollectData(ABC):
         self.measurements = []
         self.desiredThrust = 0
         self.batComp = batComp
-        self.comb = comb
-        self.mode = mode
+        # self.mode = mode
+        # self.comb = comb
         self.verbose = verbose
         self.calib_a = calib_a
         self.calib_b = calib_b
@@ -68,19 +69,20 @@ class CollectData(ABC):
         self.all_params_ok = False
 
         # Open the csv file
+        comb += "_" + extra if len(extra) > 0 else ""
         i = 0
-        filename = f"data_{self.mode}_{self.comb}_0{i}.csv"
+        filename = f"data_{mode}_{comb}_0{i}.csv"
         while os.path.isfile(filename):  # check if file already exists
             i += 1
-            filename = f"data_{self.mode}_{self.comb}_0{i}.csv"
+            filename = f"data_{mode}_{comb}_0{i}.csv"
             if i > 9:
-                filename = f"data_{self.mode}_{self.comb}_{i}.csv"
+                filename = f"data_{mode}_{comb}_{i}.csv"
             if i > 99:
                 break
         print(f"Storing data in {filename}")
         self._file = open(filename, "w+")
         self._file.write(
-            "time,thrust[N],pwm,vbat[V],rpm1,rpm2,rpm3,rpm4,v[V],i[A],p[W],thrust_cmd[PWM]\n"
+            "time,thrust[N],pwm,vbat[V],rpm1,rpm2,rpm3,rpm4,v[V],i[A],p[W],thrust_cmd[PWM],torque_x[N],torque_y[N],torque_z[N]\n"
         )
 
         print("Connecting to %s" % link_uri)
@@ -106,6 +108,7 @@ class CollectData(ABC):
         self._lg_stab = LogConfig(name="data", period_in_ms=10)
         self._lg_stab.add_variable("loadcell.weight", "float")
         self._lg_stab.add_variable("motor.m1", "uint16_t")
+        self._lg_stab.add_variable("motor.m2", "uint16_t")
         self._lg_stab.add_variable("pm.vbatMV", "float")
         self._lg_stab.add_variable("rpm.m1", "uint16_t")
         self._lg_stab.add_variable("rpm.m2", "uint16_t")
@@ -150,6 +153,13 @@ class CollectData(ABC):
             self.start_time = timestamp
         if self.loadcell is not None:
             data["loadcell.weight"] = -self.loadcell.read_data()[2] * 1000 / self.g
+            data["loadcell.torque_x"] = -self.loadcell.read_data()[3]
+            data["loadcell.torque_y"] = -self.loadcell.read_data()[4]
+            data["loadcell.torque_z"] = -self.loadcell.read_data()[5]
+        else:
+            data["loadcell.torque_x"] = 0.0
+            data["loadcell.torque_y"] = 0.0
+            data["loadcell.torque_z"] = 0.0
         if self.verbose:
             print("[%d][%s]: %s" % (timestamp - self.start_time, logconf.name, data))
         self._write(timestamp, data)
@@ -179,10 +189,10 @@ class CollectData(ABC):
         # data['pm.vbatMV_max'] = data.get('pm.vbatMV_max', 0)
         data["cmd"] = data.get("cmd", self.desiredThrust)
         self._file.write(
-            "{},{},{},{},{},{},{},{},{},{},{},{}\n".format(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n".format(
                 timestamp,
                 data["loadcell.weight"] / 1000 * self.g,
-                data["motor.m1"],
+                data["motor.m1"] + data["motor.m2"],
                 data["pm.vbatMV"] / 1000,
                 data["rpm.m1"],
                 data["rpm.m2"],
@@ -192,6 +202,9 @@ class CollectData(ABC):
                 data["asc37800.i_mA"] / 1000,
                 data["asc37800.p_mW"] / 1000,
                 data["cmd"],
+                data["loadcell.torque_x"],
+                data["loadcell.torque_y"],
+                data["loadcell.torque_z"],
             )
         )
         self._file.flush()
@@ -219,6 +232,9 @@ class CollectData(ABC):
         """Closes the connection"""
         print("Disconnecting and saving...")
         self._cf.param.set_value("motorPowerSet.m1", 0)
+        self._cf.param.set_value("motorPowerSet.m2", 0)
+        self._cf.param.set_value("motorPowerSet.m3", 0)
+        self._cf.param.set_value("motorPowerSet.m4", 0)
         self._cf.commander.send_setpoint(0, 0, 0, 0)
         # Make sure that the last packet leaves before the link is closed
         # since the message queue is not flushed before closing
@@ -237,10 +253,10 @@ class CollectDataRamp(CollectData):
     link uri.
     """
 
-    def __init__(self, link_uri, calib_a, calib_b, comb, loadcell=None):
+    def __init__(self, link_uri, calib_a, calib_b, comb, extra, loadcell=None):
         """Initialize and run the example with the specified link_uri"""
         super().__init__(
-            link_uri, calib_a, calib_b, comb, "ramp_motors", loadcell=loadcell
+            link_uri, calib_a, calib_b, "ramp_motors", comb, extra, loadcell=loadcell
         )
 
     def _ramp_motors(self):
@@ -283,44 +299,47 @@ class CollectDataStatic(CollectData):
     """
 
     def __init__(
-        self, link_uri, calib_a, calib_b, comb, extra="", batComp=False, loadcell=None
+        self,
+        link_uri,
+        calib_a,
+        calib_b,
+        comb,
+        extra,
+        batComp=False,
+        loadcell=None,
+        torques=False,
     ):
         """Initialize and run the example with the specified link_uri"""
         self.measurements = []
         self.desiredThrust = 0
-        if extra != "":  # Add an underscore if extra is not empty
-            extra = f"_{extra}"
-        if batComp:  # verification mode
-            super().__init__(
-                link_uri,
-                calib_a,
-                calib_b,
-                comb,
-                f"static_verification{extra}",
-                batComp,
-                loadcell=loadcell,
-            )
-        else:
-            super().__init__(
-                link_uri,
-                calib_a,
-                calib_b,
-                comb,
-                f"static{extra}",
-                batComp,
-                loadcell=loadcell,
-            )
+        self.torques = torques
+        mode = "static_verification" if batComp else "static"
+        super().__init__(
+            link_uri, calib_a, calib_b, mode, comb, extra, batComp, loadcell=loadcell
+        )
 
     def _stab_log_data(self, timestamp, data, logconf):
         """Callback froma the log API when data arrives"""
         if self.loadcell is not None:
-            data["loadcell.weight"] = -self.loadcell.read_data()[2] * 1000 / self.g
+            loadcell_data = self.loadcell.read_data()
+            if self.torques:
+                # To account for the fact that only 2 motors are spinning and the sysid script assumes 4
+                loadcell_data *= 2
+            data["loadcell.weight"] = -loadcell_data[2] * 1000 / self.g
+            data["loadcell.torque_x"] = loadcell_data[3]
+            data["loadcell.torque_y"] = loadcell_data[4]
+            data["loadcell.torque_z"] = np.abs(loadcell_data[5])
+        else:
+            data["loadcell.torque_x"] = 0.0
+            data["loadcell.torque_y"] = 0.0
+            data["loadcell.torque_z"] = 0.0
         if self.verbose:
             print("[%d][%s]: %s" % (timestamp, logconf.name, data))
         if self.batComp:  # In verification mode, directly store data
             self.measurements.append(data)
         elif (
             self.desiredThrust == data["motor.m1"]
+            or self.desiredThrust == data["motor.m2"]
         ):  # In collection mode, wait for command to arrive
             # self.measurements.append(np.array([data['loadcell.weight']/1000*self.g, data['pm.vbatMV']/1000]))
             self.measurements.append(data)
@@ -335,30 +354,52 @@ class CollectDataStatic(CollectData):
         return averages
 
     def _measure(
-        self, thrust, min_samples=100
+        self, thrust, min_samples=300, a_motors=True
     ):  # time per measurement = min_samples * log prediod_in_ms
         self.desiredThrust = thrust
         self.measurements = []
-        self._cf.param.set_value("motorPowerSet.m1", str(thrust))
+        if self.torques:
+            if a_motors:
+                self._cf.param.set_value("motorPowerSet.m1", thrust)
+                self._cf.param.set_value("motorPowerSet.m2", 0)
+                self._cf.param.set_value("motorPowerSet.m3", thrust)
+                self._cf.param.set_value("motorPowerSet.m4", 0)
+            else:
+                self._cf.param.set_value("motorPowerSet.m1", 0)
+                self._cf.param.set_value("motorPowerSet.m2", thrust)
+                self._cf.param.set_value("motorPowerSet.m3", 0)
+                self._cf.param.set_value("motorPowerSet.m4", thrust)
+        else:
+            self._cf.param.set_value("motorPowerSet.m1", thrust)
         while len(self.measurements) < min_samples:
             self._localization.send_emergency_stop_watchdog()
             time.sleep(0.1)
         # m = np.array(self.measurements)
         # only return the last few samples
-        return self.measurements[-int(0.2 * min_samples) :]
+        return self.measurements[-int(0.4 * min_samples) :]
 
     def _ramp_motors(self):
         self._check_parameters()
 
         self._cf.param.set_value("motorPowerSet.m1", 0)
+        self._cf.param.set_value("motorPowerSet.m2", 0)
+        self._cf.param.set_value("motorPowerSet.m3", 0)
+        self._cf.param.set_value("motorPowerSet.m4", 0)
         if self.batComp:
+            if self.torques:
+                error = "Trying to collect torque measurements with batter compensation enabled (i.e. verification). This is not implemented yet!"
+                raise NotImplementedError(error)
             self._cf.param.set_value("motorPowerSet.enable", 3)
             print("Collecting data with battery compensation")
         else:
-            self._cf.param.set_value("motorPowerSet.enable", 2)
-            print("Collecting data without battery compensation")
+            if self.torques:
+                self._cf.param.set_value("motorPowerSet.enable", 1)
+                print("Collecting torque data without battery compensation")
+            else:
+                self._cf.param.set_value("motorPowerSet.enable", 2)
+                print("Collecting data without battery compensation")
 
-        t_max = 600  # Set to np.inf to run until battery is empty
+        t_max = 1200  # Set to np.inf to run until battery is empty
         t_start = time.time()
 
         # Here we care about the thrust generated for different battery levels
@@ -368,7 +409,9 @@ class CollectDataStatic(CollectData):
             # randomply sample PWM
             pwm = int(np.random.uniform(PWM_MIN, PWM_MAX))
 
-            data = self._measure(pwm)
+            data = self._measure(pwm).copy()
+            if self.torques:
+                data += self._measure(pwm, a_motors=False).copy()
             # average thrust and vbat
             data = self._average_dict(data)
 
@@ -396,7 +439,7 @@ class CollectDataDynamic(CollectData):
     link uri and disconnects after 5s.
     """
 
-    def __init__(self, link_uri, calib_a, calib_b, comb, extra="", loadcell=None):
+    def __init__(self, link_uri, calib_a, calib_b, comb, extra, loadcell=None):
         """Initialize and run the example with the specified link_uri"""
         self.samplerate = 7  # has to be in [0,7], where 7 is the highest.
         # 0 = 10Hz (default), 1 = 20Hz, 2 = 40Hz, 3 = 80Hz, 7 = 320Hz
@@ -405,7 +448,7 @@ class CollectDataDynamic(CollectData):
         if extra != "":  # Add an underscore if extra is not empty
             extra = f"_{extra}"
         super().__init__(
-            link_uri, calib_a, calib_b, comb, f"dynamic{extra}", loadcell=loadcell
+            link_uri, calib_a, calib_b, "dynamic", comb, extra, loadcell=loadcell
         )
 
     def _fully_connected(self, link_uri):
@@ -509,7 +552,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--extra", default="", help="Additional information for labeling the csv file"
     )
-
+    parser.add_argument(
+        "--torques",
+        action="store_true",
+        help="If set, torque data will be collected (default: False)",
+    )
     args = parser.parse_args()
 
     # Only output errors from the logging framework
@@ -533,18 +580,24 @@ if __name__ == "__main__":
 
     # collect data
     if args.mode == "ramp_motors":
-        le = CollectDataRamp(args.uri, a, b, args.comb, loadcell=loadcell)
+        le = CollectDataRamp(args.uri, a, b, args.comb, args.extra, loadcell=loadcell)
     elif args.mode == "static":
         le = CollectDataStatic(
-            args.uri, a, b, args.comb, extra=args.extra, loadcell=loadcell
+            args.uri,
+            a,
+            b,
+            args.comb,
+            args.extra,
+            loadcell=loadcell,
+            torques=args.torques,
         )
     elif args.mode == "static_verification":  # activate battery compensation to test it
         le = CollectDataStatic(
-            args.uri, a, b, args.comb, extra=args.extra, batComp=True, loadcell=loadcell
+            args.uri, a, b, args.comb, args.extra, batComp=True, loadcell=loadcell
         )
     elif args.mode == "dynamic":
         le = CollectDataDynamic(
-            args.uri, a, b, args.comb, extra=args.extra, loadcell=loadcell
+            args.uri, a, b, args.comb, args.extra, loadcell=loadcell
         )
     else:
         raise NotImplementedError(

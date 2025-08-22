@@ -109,7 +109,9 @@ if __name__ == "__main__":
     Loadcell.list_interfaces()
     Loadcell.list_slaves("enp0s31f6")  # Replace with your actual interface
 
-    loadcell = Loadcell("enp0s31f6", verbose=True)  # Replace with your actual interface
+    loadcell = Loadcell(
+        "enp0s31f6", verbose=False
+    )  # Replace with your actual interface
     loadcell.read_data()  # Read data from the loadcell
     loadcell.calibrate()  # Calibrate the loadcell
 
