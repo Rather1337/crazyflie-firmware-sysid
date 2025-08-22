@@ -22,9 +22,15 @@ def loadFile(filename: str) -> dict:
     data["i"] = rawdata[:, 9]  # in [A]
     data["p"] = rawdata[:, 10]  # in [W]
     data["cmd"] = rawdata[:, 11]  # in [PWM]
-    data["torque_x"] = rawdata[:, 12]  # in [N]
-    data["torque_y"] = rawdata[:, 13]  # in [N]
-    data["torque_z"] = rawdata[:, 14]  # in [N]
+    try:
+        data["torque_x"] = rawdata[:, 12]  # in [N]
+        data["torque_y"] = rawdata[:, 13]  # in [N]
+        data["torque_z"] = rawdata[:, 14]  # in [N]
+    except IndexError:
+        print(f"Warning: {filename} does not contain torque data. Setting it to 0")
+        data["torque_x"] = 0.0 * rawdata[:, 1]
+        data["torque_y"] = 0.0 * rawdata[:, 1]
+        data["torque_z"] = 0.0 * rawdata[:, 1]
     return data
 
 
