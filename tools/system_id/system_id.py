@@ -108,10 +108,14 @@ def system_id_static(filenames, validations=[]):
     reg = LinearRegression().fit(
         X, data["torque_z"] / 4
     )  # positive=True, Ridge, LinearRegression
-    p_vmotor2thrust = np.array(
+    p_vmotor2torque = np.array(
         [reg.intercept_, reg.coef_[0], reg.coef_[1], reg.coef_[2]]
     )
-    storeYAML(comb, p_vmotor2thrust, "p_vmotor2torque")
+    storeYAML(comb, p_vmotor2torque, "p_vmotor2torque")
+
+    X = np.linspace(0.9, 3.2, 1000)
+    Y = poly(X, p_vmotor2torque, 3)
+    plt.plot(X, Y, label="fit", color="tab:green")
 
     plt.xlabel("V_motors [V]")
     plt.ylabel("Torque per motor [Nm]")
@@ -123,7 +127,6 @@ def system_id_static(filenames, validations=[]):
     print("#########################################################")
     print("#### V_motors [V] to RPM and RPM to thrust [N] curve")
     print("#########################################################")
-
     fig, axs = plt.subplots(2, 1)
 
     axs[0].scatter(data["vmotors"], data["rpm_avg"], label="training data")
@@ -157,42 +160,40 @@ def system_id_static(filenames, validations=[]):
 
     print(f"Thrust = {reg.intercept_} + {reg.coef_[0]}*RPM + {reg.coef_[1]}*RPM^2")
 
-    # print("#########################################################")
-    # print("#### V_motors [V] to RPM and RPM to torque [N] curve")
-    # print("#########################################################")
+    print("#########################################################")
+    print("#### V_motors [V] to RPM and RPM to torque [N] curve")
+    print("#########################################################")
+    fig, axs = plt.subplots(2, 1)
 
-    # fig, axs = plt.subplots(2, 1)
+    # As above
+    axs[0].scatter(data["vmotors"], data["rpm_avg"], label="training data")
+    if len(validations) > 0:
+        axs[0].scatter(data_val["vmotors"], data_val["rpm_avg"], label="training data")
+    vmotors = np.linspace(1, 3, 1000)
+    axs[0].plot(vmotors, poly(vmotors, p_vmotor2rpm, 1), label="fit", color="tab:green")
+    axs[0].set_xlabel("Motor voltage [V]")
+    axs[0].set_ylabel("Motor RPM")
+    axs[0].legend()
 
-    # axs[0].scatter(data["vmotors"], data["rpm_avg"], label="training data")
-    # if len(validations) > 0:
-    #     axs[0].scatter(data_val["vmotors"], data_val["rpm_avg"], label="training data")
-    # X = np.vstack((data["vmotors"]))
-    # reg = LinearRegression(fit_intercept=True).fit(X, data["rpm_avg"])
-    # p_vmotor2rpm = [reg.intercept_, reg.coef_[0]]
-    # storeYAML(comb, p_vmotor2rpm, "p_vmotor2rpm")
-    # vmotors = np.linspace(1, 3, 1000)
-    # axs[0].plot(vmotors, poly(vmotors, p_vmotor2rpm, 1), label="fit", color="tab:green")
-    # axs[0].set_xlabel("Motor voltage [V]")
-    # axs[0].set_ylabel("Motor RPM")
-    # axs[0].legend()
+    axs[1].scatter(data["rpm_avg"], data["torque_z"], label="training data")
+    if len(validations) > 0:
+        axs[1].scatter(
+            data_val["rpm_avg"], data_val["torque_z"], label="validation data"
+        )
+    X = np.vstack((data["rpm_avg"], data["rpm_avg"] ** 2)).T
+    reg = LinearRegression(fit_intercept=False).fit(X, data["torque_z"])
+    p_rpm2torque = [reg.intercept_, reg.coef_[0], reg.coef_[1]]
+    storeYAML(comb, p_rpm2torque, "p_rpm2torque")
+    rpms = np.linspace(000, 30000, 1000)
+    axs[1].plot(rpms, poly(rpms, p_rpm2torque, 2), label="fit", color="tab:green")
+    axs[1].set_xlabel("Motor RPM")
+    axs[1].set_ylabel("Torque [Nm]")
+    axs[1].legend()
 
-    # axs[1].scatter(data["rpm_avg"], data["thrust"], label="training data")
-    # if len(validations) > 0:
-    #     axs[1].scatter(data_val["rpm_avg"], data_val["thrust"], label="validation data")
-    # X = np.vstack((data["rpm_avg"], data["rpm_avg"] ** 2)).T
-    # reg = LinearRegression(fit_intercept=False).fit(X, data["thrust"])
-    # p_rpm2thrust = [reg.intercept_, reg.coef_[0], reg.coef_[1]]
-    # storeYAML(comb, p_rpm2thrust, "p_rpm2thrust")
-    # rpms = np.linspace(000, 30000, 1000)
-    # axs[1].plot(rpms, poly(rpms, p_rpm2thrust, 2), label="fit", color="tab:green")
-    # axs[1].set_xlabel("Motor RPM")
-    # axs[1].set_ylabel("Thrust [N]")
-    # axs[1].legend()
+    axs[0].title.set_text("Motor voltage to RPM and RPM to torque")
+    plt.show()
 
-    # axs[0].title.set_text("Motor voltage to RPM and RPM to thrust")
-    # plt.show()
-
-    # print(f"Thrust = {reg.intercept_} + {reg.coef_[0]}*RPM + {reg.coef_[1]}*RPM^2")
+    print(f"Thrust = {reg.intercept_} + {reg.coef_[0]}*RPM + {reg.coef_[1]}*RPM^2")
 
     ### power -> thrust (+ efficiency)
     print("#########################################################")
