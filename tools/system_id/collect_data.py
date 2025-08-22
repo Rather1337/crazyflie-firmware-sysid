@@ -79,6 +79,7 @@ class CollectData(ABC):
                 filename = f"data_{mode}_{comb}_{i}.csv"
             if i > 99:
                 break
+        filename = "data/" + filename
         print(f"Storing data in {filename}")
         self._file = open(filename, "w+")
         self._file.write(
