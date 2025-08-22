@@ -558,6 +558,11 @@ if __name__ == "__main__":
         action="store_true",
         help="If set, torque data will be collected (default: False)",
     )
+    parser.add_argument(
+        "--use_loadcell",
+        action="store_true",
+        help="If set, a loadcell from the Loadcell class is used (default: False)",
+    )
     args = parser.parse_args()
 
     # Only output errors from the logging framework
@@ -566,18 +571,18 @@ if __name__ == "__main__":
     # Initialize the low-level drivers (don't list the debug drivers)
     cflib.crtp.init_drivers(enable_debug_driver=False)
 
-    with open(args.calibration, "r") as f:
-        r = yaml.safe_load(f)
-        a = r["a"]
-        b = r["b"]
+    if args.use_loadcell:
+        a, b = 0, 0  # not needed for the precalibrated loadcells
 
-    use_loadcell = True  # TODO change for argument
-    loadcell = None
-    if use_loadcell:
         from loadcell import Loadcell
 
         loadcell = Loadcell("enp0s31f6", verbose=False)
         loadcell.calibrate()
+    else:
+        with open(args.calibration, "r") as f:
+            r = yaml.safe_load(f)
+            a, b = r["a"], r["b"]
+        loadcell = None
 
     # collect data
     if args.mode == "ramp_motors":
