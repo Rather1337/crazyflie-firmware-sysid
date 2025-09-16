@@ -253,10 +253,19 @@ class CollectDataRamp(CollectData):
     link uri.
     """
 
-    def __init__(self, link_uri, calib_a, calib_b, comb, extra, loadcell=None):
+    def __init__(
+        self, link_uri, calib_a, calib_b, comb, extra, loadcell=None, verbose=False
+    ):
         """Initialize and run the example with the specified link_uri"""
         super().__init__(
-            link_uri, calib_a, calib_b, "ramp_motors", comb, extra, loadcell=loadcell
+            link_uri,
+            calib_a,
+            calib_b,
+            "ramp_motors",
+            comb,
+            extra,
+            loadcell=loadcell,
+            verbose=verbose,
         )
 
     def _ramp_motors(self):
@@ -308,6 +317,7 @@ class CollectDataStatic(CollectData):
         batComp=False,
         loadcell=None,
         torques=False,
+        verbose=False,
     ):
         """Initialize and run the example with the specified link_uri"""
         self.measurements = []
@@ -315,7 +325,15 @@ class CollectDataStatic(CollectData):
         self.torques = torques
         mode = "static_verification" if batComp else "static"
         super().__init__(
-            link_uri, calib_a, calib_b, mode, comb, extra, batComp, loadcell=loadcell
+            link_uri,
+            calib_a,
+            calib_b,
+            mode,
+            comb,
+            extra,
+            batComp,
+            loadcell=loadcell,
+            verbose=verbose,
         )
 
     def _stab_log_data(self, timestamp, data, logconf):
@@ -333,8 +351,10 @@ class CollectDataStatic(CollectData):
             data["loadcell.torque_x"] = 0.0
             data["loadcell.torque_y"] = 0.0
             data["loadcell.torque_z"] = 0.0
+
         if self.verbose:
             print("[%d][%s]: %s" % (timestamp, logconf.name, data))
+
         if self.batComp:  # In verification mode, directly store data
             self.measurements.append(data)
         elif (
@@ -439,7 +459,9 @@ class CollectDataDynamic(CollectData):
     link uri and disconnects after 5s.
     """
 
-    def __init__(self, link_uri, calib_a, calib_b, comb, extra, loadcell=None):
+    def __init__(
+        self, link_uri, calib_a, calib_b, comb, extra, loadcell=None, verbose=False
+    ):
         """Initialize and run the example with the specified link_uri"""
         self.samplerate = 7  # has to be in [0,7], where 7 is the highest.
         # 0 = 10Hz (default), 1 = 20Hz, 2 = 40Hz, 3 = 80Hz, 7 = 320Hz
@@ -448,7 +470,14 @@ class CollectDataDynamic(CollectData):
         if extra != "":  # Add an underscore if extra is not empty
             extra = f"_{extra}"
         super().__init__(
-            link_uri, calib_a, calib_b, "dynamic", comb, extra, loadcell=loadcell
+            link_uri,
+            calib_a,
+            calib_b,
+            "dynamic",
+            comb,
+            extra,
+            loadcell=loadcell,
+            verbose=verbose,
         )
 
     def _fully_connected(self, link_uri):
@@ -562,6 +591,11 @@ if __name__ == "__main__":
         action="store_true",
         help="If set, a loadcell from the Loadcell class is used (default: False)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="If set, verbose output is enabled (default: False)",
+    )
     args = parser.parse_args()
 
     # Only output errors from the logging framework
@@ -585,7 +619,15 @@ if __name__ == "__main__":
 
     # collect data
     if args.mode == "ramp_motors":
-        le = CollectDataRamp(args.uri, a, b, args.comb, args.extra, loadcell=loadcell)
+        le = CollectDataRamp(
+            args.uri,
+            a,
+            b,
+            args.comb,
+            args.extra,
+            loadcell=loadcell,
+            verbose=args.verbose,
+        )
     elif args.mode == "static":
         le = CollectDataStatic(
             args.uri,
@@ -595,14 +637,28 @@ if __name__ == "__main__":
             args.extra,
             loadcell=loadcell,
             torques=args.torques,
+            verbose=args.verbose,
         )
     elif args.mode == "static_verification":  # activate battery compensation to test it
         le = CollectDataStatic(
-            args.uri, a, b, args.comb, args.extra, batComp=True, loadcell=loadcell
+            args.uri,
+            a,
+            b,
+            args.comb,
+            args.extra,
+            batComp=True,
+            loadcell=loadcell,
+            verbose=args.verbose,
         )
     elif args.mode == "dynamic":
         le = CollectDataDynamic(
-            args.uri, a, b, args.comb, args.extra, loadcell=loadcell
+            args.uri,
+            a,
+            b,
+            args.comb,
+            args.extra,
+            loadcell=loadcell,
+            verbose=args.verbose,
         )
     else:
         raise NotImplementedError(
