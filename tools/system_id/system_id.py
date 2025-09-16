@@ -1,7 +1,7 @@
 import argparse
 
 import numpy as np
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, RANSACRegressor
 from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
 from utils import loadFiles, cutData, poly, inversepoly, loadYAML, storeYAML
@@ -30,9 +30,10 @@ def system_id_static(filenames, validations=[]):
 
     # Fitting
     X = np.vstack((data["vmotors"], data["vmotors"] ** 2, data["vmotors"] ** 3)).T
-    reg = LinearRegression().fit(
+    ransac = RANSACRegressor(LinearRegression()).fit(
         X, data["thrust"] / 4
     )  # positive=True, Ridge, LinearRegression
+    reg = ransac.estimator_
     p_vmotor2thrust = np.array(
         [reg.intercept_, reg.coef_[0], reg.coef_[1], reg.coef_[2]]
     )
@@ -47,6 +48,9 @@ def system_id_static(filenames, validations=[]):
     elif comb[1:] == "350":
         THRUST_MIN = 0.03
         THRUST_MAX = 0.65 / 4
+    elif comb[1:] == "500":
+        THRUST_MIN = 0.03
+        THRUST_MAX = 0.72 / 4
     else:
         THRUST_MIN = 0.02
         THRUST_MAX = 0.45 / 4
@@ -60,11 +64,19 @@ def system_id_static(filenames, validations=[]):
     storeYAML(comb, VMOTOR_MIN, "VMOTOR_MIN")
     storeYAML(comb, VMOTOR_MAX, "VMOTOR_MAX")
 
-    plt.scatter(VMOTOR_MAX, THRUST_MAX, marker="x", label="limit")
+    plt.scatter(
+        VMOTOR_MAX,
+        THRUST_MAX,
+        marker="x",
+        label="limit",
+        c="tab:red",
+        linewidths=3,
+        s=100,
+    )
 
     X = np.linspace(0.9, 3.2, 1000)
     Y = poly(X, p_vmotor2thrust, 3)
-    plt.plot(X, Y, label="fit", color="tab:green")
+    plt.plot(X, Y, label="fit", color="tab:red")
 
     print(
         f"Thrust = {reg.intercept_:.6f} + {reg.coef_[0]:.6f}*V + {reg.coef_[1]:.6f}*V^2 + {reg.coef_[2]:.6f}*V^3"
@@ -300,7 +312,7 @@ def system_id_dynamic(filenames, validations=[]):
     # The first one is to assume the motor speed as a first order
     # system, which is physically correct, if we ignore the drag
     # and DC motor electrical dynamics. The equation is
-    # rpm_dot = 1/tau_rpm * (rpm_cmd - rpm)
+    # rpm_dot = 1/tau_rpm * (rpm_cmd - rpm) - k_drag * rpm^2
     # Since we have 4 motors, we average the rpms
     # Alternatively, we can assume the thrust itself to be a first
     # order system: thrust_dot = 1/tau_f * (thrust_cmd - thrust)
@@ -313,6 +325,7 @@ def system_id_dynamic(filenames, validations=[]):
 
     A = (rpmCMD - rpm_filtered).reshape(-1, 1)
     b = rpm_dot.reshape(-1, 1)
+    print(b.shape)
     k, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
     tau_rpm = 1 / k[0, 0]
 
@@ -377,6 +390,13 @@ def system_id_dynamic(filenames, validations=[]):
     plt.legend()
     plt.show()
 
+    plt.plot(data["time"], data["rpm_avg"], label="RPM Motors")
+    plt.plot(data["time"], rpmCMD, label="RPM CMD")
+    plt.xlabel("Time [s]")
+    plt.ylabel("RPM")
+    plt.legend()
+    plt.show()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -409,13 +429,14 @@ if __name__ == "__main__":
         if extra != "":
             comb = f"{comb}_{extra}"
         files = [
-            # f"data/data_{mode}_{comb}_00.csv",
-            # f"data/data_{mode}_{comb}_01.csv",
-            # f"data/data_{mode}_{comb}_02.csv",
-            # f"data/data_{mode}_{comb}_05.csv",
             f"data/data_{mode}_{comb}_00.csv",
             # f"data/data_{mode}_{comb}_01.csv",
             # f"data/data_{mode}_{comb}_02.csv",
+            # f"data/data_{mode}_{comb}_05.csv",
+            # f"data/data_{mode}_{comb}_00.csv",
+            # f"data/data_{mode}_{comb}_01.csv",
+            # f"data/data_{mode}_{comb}_02.csv",
+            # f"data/data_{mode}_{comb}_M1_00.csv",
             # f"data/data_{mode}_{comb}_M1_01.csv",
             # f"data/data_{mode}_{comb}_M1_02.csv",
             # f"data/data_{mode}_{comb}_M1_05.csv",
@@ -429,12 +450,12 @@ if __name__ == "__main__":
             # f"data/data_{mode}_{comb}_M4_01.csv",
             # f"data/data_{mode}_{comb}_M4_02.csv",
         ]
-        combVal = "L250"
+        combVal = "B350"
         filesVal = [
-            # f"data/data_{mode}_{comb}_00.csv",
-            # f"data/data_{mode}_{comb}_01.csv",
-            # f"data/data_{mode}_{comb}_02.csv",
-            f"data/data_{mode}_{combVal}_M1_02.csv",
+            # f"data/data_{mode}_{combVal}_00.csv",
+            # f"data/data_{mode}_{combVal}_01.csv",
+            # f"data/data_{mode}_{combVal}_02.csv",
+            # f"data/data_{mode}_{combVal}_M1_02.csv",
             # f"data/data_{mode}_{combVal}_M3_02.csv",
             # f"data/data_{mode}_{combVal}_M2_03.csv",
             # f"data/data_{mode}_{combVal}_M4_01.csv",
