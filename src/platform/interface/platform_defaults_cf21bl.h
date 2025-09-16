@@ -54,7 +54,7 @@
 #define VMOTOR2THRUST3  0.005432709913908448f
 #define THRUST_MIN      0.03f
 #define THRUST_MAX      0.18f
-#define THRUST2TORQUE   0.005964552f // TODO, value is for the cf2 legacy
+#define THRUST2TORQUE   0.004899994f
 
 // Default PID gains
 #define PID_ROLL_RATE_KP 200.0
