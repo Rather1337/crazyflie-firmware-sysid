@@ -374,8 +374,8 @@ class CollectDataStatic(CollectData):
         return averages
 
     def _measure(
-        self, thrust, min_samples=300, a_motors=True
-    ):  # time per measurement = min_samples * log prediod_in_ms
+        self, thrust, min_samples=100, a_motors=True
+    ):  # time per measurement = min_samples * log period
         self.desiredThrust = thrust
         self.measurements = []
         if self.torques:
@@ -429,15 +429,23 @@ class CollectDataStatic(CollectData):
             # randomply sample PWM
             pwm = int(np.random.uniform(PWM_MIN, PWM_MAX))
 
-            data = self._measure(pwm).copy()
+            samples = (
+                100 if self.loadcell is None else 300
+            )  # more samples for loadcell to average out noise
+
+            data = self._measure(pwm, samples).copy()
             if self.torques:
-                data += self._measure(pwm, a_motors=False).copy()
+                data += self._measure(pwm, samples, a_motors=False).copy()
             # average thrust and vbat
             data = self._average_dict(data)
 
-            print(
-                f"time={time.time() - t_start:.1f}s, pwm={pwm}, vbat={data['pm.vbatMV'] / 1000:.3f}V, vmotors={data['pm.vbatMV'] / 1000 * pwm / PWM_MAX:.3f}V, thrust={data['loadcell.weight'] * self.g:.3f}mN"
-            )
+            info = f"time={time.time() - t_start:.1f}s, "
+            info += f"pwm cmd={pwm}, "
+            info += f"pwm actual={(data['motor.m1']) if not self.torques else (data['motor.m1'] + data['motor.m2'])}, "
+            info += f"vbat={data['pm.vbatMV'] / 1000:.3f}V, "
+            info += f"vmotors={data['pm.vbatMV'] / 1000 * pwm / PWM_MAX:.3f}V, "
+            info += f"thrust={data['loadcell.weight'] * self.g:.3f}mN"
+            print(info)
 
             # write result
             self._write(time.time() - t_start, data)
