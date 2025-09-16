@@ -48,13 +48,13 @@
 // Update this value with the mass of your specific setup if different.
 #define CF_MASS 0.0393f  // kg
 // Thrust coefficients
-#define VMOTOR2THRUST0  -0.02476537915958403f // TODO, value is for the cf2
-#define VMOTOR2THRUST1  0.06523793527519485f // TODO, value is for the cf2
-#define VMOTOR2THRUST2  -0.026792504967750107f // TODO, value is for the cf2
-#define VMOTOR2THRUST3  0.006776789303971145f // TODO, value is for the cf2
-#define THRUST_MIN      0.02f // TODO, value is for the cf2
-#define THRUST_MAX      0.1125f // TODO, value is for the cf2
-#define THRUST2TORQUE   0.005964552f // TODO, value is for the cf2
+#define VMOTOR2THRUST0  -0.03293241334494161f
+#define VMOTOR2THRUST1  0.07584356745299924f
+#define VMOTOR2THRUST2  -0.01727777590915039f
+#define VMOTOR2THRUST3  0.005432709913908448f
+#define THRUST_MIN      0.03f
+#define THRUST_MAX      0.18f
+#define THRUST2TORQUE   0.005964552f // TODO, value is for the cf2 legacy
 
 // Default PID gains
 #define PID_ROLL_RATE_KP 200.0
