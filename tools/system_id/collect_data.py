@@ -188,11 +188,17 @@ class CollectData(ABC):
         # data['loadcell.weight_max'] = data.get('loadcell.weight_max', 0)
         # data['pm.vbatMV_max'] = data.get('pm.vbatMV_max', 0)
         data["cmd"] = data.get("cmd", self.desiredThrust)
+        # Determine PWM value: if m1 and m2 are equal, use either; if one is zero, use the sum
+        if data["motor.m1"] == 0 or data["motor.m2"] == 0:
+            pwm = data["motor.m1"] + data["motor.m2"]
+        else:
+            pwm = (data["motor.m1"] + data["motor.m2"]) / 2
+
         self._file.write(
             "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n".format(
                 timestamp,
                 data["loadcell.weight"] / 1000 * self.g,
-                data["motor.m1"] + data["motor.m2"],
+                pwm,
                 data["pm.vbatMV"] / 1000,
                 data["rpm.m1"],
                 data["rpm.m2"],
@@ -322,6 +328,11 @@ class CollectDataStatic(CollectData):
         """Initialize and run the example with the specified link_uri"""
         self.measurements = []
         self.desiredThrust = 0
+        self.torques = False
+        if loadcell is not None:
+            self.torques = torques
+        elif torques:
+            raise ValueError("Torques can only be collected with a separate loadcell.")
         self.torques = torques
         mode = "static_verification" if batComp else "static"
         super().__init__(
