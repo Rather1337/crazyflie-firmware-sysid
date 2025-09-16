@@ -71,15 +71,14 @@ class CollectData(ABC):
         # Open the csv file
         comb += "_" + extra if len(extra) > 0 else ""
         i = 0
-        filename = f"data_{mode}_{comb}_0{i}.csv"
+        filename = f"data/data_{mode}_{comb}_0{i}.csv"
         while os.path.isfile(filename):  # check if file already exists
             i += 1
-            filename = f"data_{mode}_{comb}_0{i}.csv"
+            filename = f"data/data_{mode}_{comb}_0{i}.csv"
             if i > 9:
-                filename = f"data_{mode}_{comb}_{i}.csv"
+                filename = f"data/data_{mode}_{comb}_{i}.csv"
             if i > 99:
                 break
-        filename = "data/" + filename
         print(f"Storing data in {filename}")
         self._file = open(filename, "w+")
         self._file.write(
