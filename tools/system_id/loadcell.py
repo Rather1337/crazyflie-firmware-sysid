@@ -4,9 +4,6 @@ import time
 import struct
 import pysoem
 import numpy as np
-import matplotlib.pyplot as plt
-from collections import deque
-import os
 
 
 class Loadcell:
@@ -23,12 +20,27 @@ class Loadcell:
 
         self._slave_id = slave_id
         self.slave = self._ethercat_master.slaves[self._slave_id]
+
+        # Activate low pass filter
+        control1 = struct.unpack("<I", self.slave.sdo_read(0x7010, 0x01, 4))[0]
+        print(bin(control1))
+        FILTER_MASK = 0b1111 << 4
+        control1 &= ~FILTER_MASK
+        # control1 |= 0x8 << 4  # 0-8 per Table 4.1, 2=140 Hz, 8=2 Hz
+        print(bin(control1))
+        self.slave.sdo_write(0x7010, 0x01, struct.pack("<I", control1))
+        verify_raw = self.slave.sdo_read(0x7010, 0x01, 4)
+        verify_value = struct.unpack("<I", verify_raw)[0]
+        print(
+            f"Control Codes: 0x{verify_value:08X}, Filter bits: {(verify_value >> 4) & 0xF}"
+        )
+        time.sleep(0.5)
         self._get_counts_per_force()
 
         self._interface = interface
         self._slave_id = slave_id
 
-        self._offset = np.zeros(6)  # fx, fy, fz, mx, my, mz
+        self._offset = np.zeros(6)  # fx, fy, fz, tx, ty, tz
         self._counts_per_SI = np.array(
             [
                 self._cp_force,
@@ -41,10 +53,17 @@ class Loadcell:
         )
 
     def _get_counts_per_force(self):
-        cp_force_raw = self.slave.sdo_read(0x2040, 0x31, 4)  # count per force
-        cp_torque_raw = self.slave.sdo_read(0x2040, 0x32, 4)  # count per torque
+        force_unit_raw = self.slave.sdo_read(0x2040, 0x29, 4)
+        torque_unit_raw = self.slave.sdo_read(0x2040, 0x2A, 4)
+        print(f"Force unit = {force_unit_raw}")
+        print(f"Torque unit = {torque_unit_raw}")
+
+        cp_force_raw = self.slave.sdo_read(0x2040, 0x31, 4)  # count per force [N]
+        cp_torque_raw = self.slave.sdo_read(0x2040, 0x32, 4)  # count per torque [Nmm]
+        # Note that force is returned as N, but torque as Nmm. However, we want
+        # Nm, so we scale counts per torque by 1000
         self._cp_force = struct.unpack("<I", cp_force_raw)[0]
-        self._cp_torque = struct.unpack("<I", cp_torque_raw)[0]
+        self._cp_torque = struct.unpack("<I", cp_torque_raw)[0] * 1000
         if self._verbose:
             print(f"Counts/Force: {self._cp_force}, Counts/Torque: {self._cp_torque}")
 
@@ -68,16 +87,20 @@ class Loadcell:
         self._ethercat_master.send_processdata()
         self._ethercat_master.receive_processdata(2000)
 
-        # 0x6000 readings are typically in slave inputs; check byte offset
-        # For example, assuming input mapping starts right away:
+        status = struct.unpack("<1i", self.slave.sdo_read(0x6010, 0x0, 32))[0]
+        if self._verbose or status != 0:
+            print(f"status {status}")
 
-        # print(f"{master.slaves[0].input=}")
         data = self.slave.input  # raw byte array
         # Parse Fx, Fy, Fz, Tx, Ty, Tz (6 × int32)
         fx, fy, fz, tx, ty, tz = struct.unpack("<6i", data[0:24])
-        self._reading = (
-            np.array([fx, fy, fz, tx, ty, tz]) / self._counts_per_SI - self._offset
-        )
+        self._reading_raw = np.array([fx, fy, fz, tx, ty, tz])
+        self._reading = self._reading_raw / self._counts_per_SI - self._offset
+
+        if self._verbose:
+            txt = f"Raw Fx: {fx}, Fy: {fy}, Fz: {fz}, "
+            txt += f"Tx: {tx}, Ty: {ty}, Tz: {tz}"
+            print(txt)
 
         if self._verbose:
             txt = f"Fx: {self._reading[0]:.3f}, Fy: {self._reading[1]:.3f}, Fz: {self._reading[2]:.3f}, "
@@ -106,16 +129,47 @@ class Loadcell:
 
 # Short test (Needs to be executed as sudo)
 if __name__ == "__main__":
-    Loadcell.list_interfaces()
-    Loadcell.list_slaves("enp0s31f6")  # Replace with your actual interface
+    # Replace the name with your actual interface name. You can check that with
+    # list_interfaces(). Note that PySOEM needs access to your ethernet ports.
+    # For that, we need to give Python permission:
+    # sudo setcap cap_net_raw,cap_net_admin+eip $(readlink -f $(which python3))
+    interface_name = "enp0s31f6"  # enp0s31f6, enp121s0
+    inf = True  # set this for infinite reading until killing the script
 
-    loadcell = Loadcell(
-        "enp0s31f6", verbose=False
-    )  # Replace with your actual interface
+    Loadcell.list_interfaces()
+    Loadcell.list_slaves(interface_name)
+
+    loadcell = Loadcell(interface_name, verbose=False)
     loadcell.read_data()  # Read data from the loadcell
     loadcell.calibrate()  # Calibrate the loadcell
 
-    while True:
+    readings = []
+    readings_raw = []
+    f = 100  # Hz
+    while inf:
         reading = loadcell.read_data()
-        print(reading)
-        time.sleep(0.01)
+        readings.append(reading)
+        if len(readings) >= 100:
+            print(np.mean(readings, axis=0))
+            readings = []
+        time.sleep(1 / f)
+
+    T = 300  # s
+    N = T * f
+    for i in range(N):
+        loadcell.read_data()
+        readings.append(loadcell._reading)
+        readings_raw.append(loadcell._reading_raw)
+        time.sleep(1 / f)
+
+    t = np.linspace(0, N / f, N)
+    data = {
+        "t": t,
+        "readings": np.array(readings),
+        "readings_raw": np.array(readings_raw),
+    }
+
+    import pickle
+
+    with open("loadcell_data.pkl", "wb") as f:
+        pickle.dump(data, f)
